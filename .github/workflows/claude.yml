@@ -1,22 +1,30 @@
 name: Claude Code
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issues:
+    types: [opened]
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  issues:
-    types: [opened, assigned]
   pull_request_review:
     types: [submitted]
 
 jobs:
-  claude:
+  # Respond to any comment (issue or PR) — no @claude mention needed
+  claude-comment:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'claude-code[bot]' &&
+      (
+        github.event_name == 'issue_comment' ||
+        github.event_name == 'pull_request_review_comment' ||
+        github.event_name == 'pull_request_review'
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -25,13 +33,85 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Run Claude Code
-        id: claude
-        uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  # Auto-review every pull request when opened or updated
+  claude-pr-review:
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'claude-code[bot]' &&
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          direct_prompt: |
+            Review this pull request thoroughly. Look for bugs, logic errors, security issues,
+            and code quality problems. Suggest concrete improvements. Post your review as a
+            pull request review comment.
+
+  # Auto-respond to every new issue and try to fix it
+  claude-issue:
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'claude-code[bot]' &&
+      github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          direct_prompt: |
+            A new issue was opened. Read the issue title and description carefully.
+            If it describes a bug or feature request, implement a fix or the feature,
+            then open a pull request with your changes. If it's a question, answer it
+            as a comment on the issue.
+
+  # Auto-review every push to main
+  claude-push:
+    if: |
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'claude-code[bot]' &&
+      github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          direct_prompt: |
+            Review the latest commit pushed to main. Check for bugs, issues, or anything
+            that could be improved. If you find a real problem, open a GitHub issue describing
+            it. If everything looks fine, do nothing.
